@@ -2,11 +2,19 @@ from fastapi import FastAPI, status, HTTPException, Depends
 from database import Base, engine, SessionLocal
 from sqlalchemy.orm import Session
 from typing import List
+from hashing import Hash
+from oauth2 import get_current_user
+
+import authentication
 
 import models
 import schemas
 
 app = FastAPI()
+
+models.Base.metadata.create_all(engine)
+
+app.include_router(authentication.router)
 
 def get_session():
     session = SessionLocal()
@@ -21,6 +29,17 @@ async def root():
     return {"message": "Hello World"}
 
 
+@app.post("/create_user", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
+def create_user(user: schemas.UserCreate, session: Session = Depends(get_session)):
+    user = models.User(email=user.email, password=Hash.bcrypt(user.password), full_name=user.full_name, is_active=user.is_active)
+
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    return user
+
+
 @app.post("/student", response_model=schemas.Student, status_code=status.HTTP_201_CREATED)
 def create_student(student: schemas.StudentCreate, session: Session = Depends(get_session)):
     stu = models.Student(name=student.name, email=student.email, roll_no=student.roll_no)
@@ -33,7 +52,7 @@ def create_student(student: schemas.StudentCreate, session: Session = Depends(ge
 
 
 @app.get("/student", response_model=List[schemas.Student])
-def all_student():
+def all_student(get_current_user: schemas.User = Depends(get_current_user)):
     session = Session(bind=engine, expire_on_commit=False)
     students = session.query(models.Student).all()
 
